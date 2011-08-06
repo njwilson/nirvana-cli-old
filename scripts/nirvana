@@ -1,3 +1,22 @@
 #!/usr/bin/env python
 
-print 'TODO'
+import sys
+from nirvana.restclient import RestClient
+
+if __name__ == '__main__':
+    # Usage: nirvana <username> <md5 of password>
+    print "Authenticating..."
+    client = RestClient()
+    raw_auth = client.api_auth_new(
+            sys.argv[1], sys.argv[2])['results'][0]['auth']
+    client.auth_token = raw_auth['token']
+
+    print "Getting all data..."
+    everything = client.api_everything()
+
+    for result in everything['results']:
+        if 'user' in result:
+            first = result['user']['firstname']
+            last = result['user']['lastname']
+            print "Got everything for {0} {1}!".format(first, last)
+            break
