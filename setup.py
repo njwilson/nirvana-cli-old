@@ -15,7 +15,7 @@ setup(
         author='Nick Wilson',
         author_email='nick at njwilson net',
         url='http://github.com/njwilson/nirvana-cli',
-        py_modules=['nirvanacli'],
+        packages=['nirvana', 'nirvanacli'],
         scripts=['scripts/nirvana'],
         classifiers=[
                 'Development Status :: 1 - Planning',
