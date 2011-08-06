@@ -14,7 +14,7 @@ setup(
         long_description=long_description,
         author='Nick Wilson',
         author_email='nick at njwilson net',
-        url='http://github.com/njwilson/nirvanacli',
+        url='http://github.com/njwilson/nirvana-cli',
         py_modules=['nirvanacli'],
         scripts=['scripts/nirvana'],
         classifiers=[
