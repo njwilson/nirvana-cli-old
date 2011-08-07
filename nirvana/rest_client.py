@@ -23,6 +23,7 @@ Example:
 """
 
 import json
+import logging
 import sys
 import time
 import urllib
@@ -34,6 +35,8 @@ __all__ = ['Error', 'CommunicationError', 'HTTPError', 'RestClient']
 DEFAULT_API_URL = 'https://api.nirvanahq.com/'
 DEFAULT_APP_ID = 'nirvana-python'
 DEFAULT_APP_VERSION = '0'   # TODO: Use the same version as setup.py?
+
+log = logging.getLogger(__name__)
 
 
 class Error(Exception):
@@ -97,6 +100,9 @@ class RestClient(object):
         self.app_id = app_id or DEFAULT_APP_ID
         self.app_version = app_version or DEFAULT_APP_VERSION
         self.api_url = DEFAULT_API_URL
+        log.info(
+                "Initialized REST client for application %s version %s",
+                self.app_id, self.app_version)
 
     def api_auth_new(self, user, password_md5):
         """Authenticate the user with the API.
@@ -123,6 +129,7 @@ class RestClient(object):
                     get a valid JSON response.
 
         """
+        log.info("Authenticating user %s", user)
         post_data = {
                 'method': 'auth.new',
                 'u': user,
@@ -152,12 +159,14 @@ class RestClient(object):
 
         """
         since = since or 0
+        log.info("Retrieving all user data since time %d", since)
         params = {'method': 'everything', 'since': str(since)}
         url, _, _ = self._create_request_url('rest', extra_params=params)
         return _api_request(url)
 
     def _api_post_rest(self, data):
         """Submit a POST (type 'rest') to the API."""
+        log.debug("Initiating an HTTP POST request with URL-encoded data")
         url, _, _ = self._create_request_url('rest')
         headers = {'Content-Type': 'application/x-www-form-urlencoded'}
         data = urllib.urlencode(data)
@@ -165,6 +174,7 @@ class RestClient(object):
 
     def _api_post_json(self, json_data):
         """Submit a POST (type 'json') to the API."""
+        log.debug("Initiating an HTTP POST request with JSON data")
         url, _, _ = self._create_request_url('json')
         headers = {'Content-Type': 'application/json'}
         return _api_request(url, extra_headers=headers, data=json_data)
@@ -196,6 +206,12 @@ def _api_request(url, extra_headers=None, data=None):
             request.add_header(header, value)
     if data:
         request.add_data(data)
+    log.debug(("Initiating API request:\n"
+               "  URL: %s\n"
+               "  Method: %s\n"
+               "  Extra Headers: %s\n"
+               "  Data: %s"),
+              url, request.get_method(), extra_headers, data)
 
     # TODO: The urllib2 documentation says "Warning: HTTPS requests do not
     # do any verification of the server's certificate."  What does this
@@ -204,16 +220,23 @@ def _api_request(url, extra_headers=None, data=None):
     try:
         json_data = urllib2.urlopen(request).read()
     except urllib2.HTTPError as exc:
-        # Re-brand the urllib2.HTTPError as a rest_client.HTTPError
+        log.info(
+                "Received HTTP error from request to %s: %s",
+                url, exc)
         new_exc = HTTPError()
         new_exc.__dict__ = exc.__dict__.copy()
         raise new_exc, None, sys.exc_info()[2]
     except urllib2.URLError as exc:
+        log.info(
+                "Error executing HTTP request to %s: %s",
+                url, exc)
         raise CommunicationError(exc), None, sys.exc_info()[2]
 
     try:
         response = json.loads(json_data)
     except ValueError as exc:
+        log.info("Failed to parse JSON from response: %s", json_data)
         raise CommunicationError(exc), None, sys.exc_info()[2]
 
+    log.debug("Converted response from JSON: %s", response)
     return response
