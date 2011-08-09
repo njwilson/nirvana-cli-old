@@ -303,7 +303,7 @@ class RestClientInitArgs(unittest.TestCase):
         """Creates a RestClient with custom arguments."""
         self.client = RestClient(
                 auth_token=FAKE_AUTH_TOKEN, app_id=FAKE_APP_ID,
-                app_version=FAKE_APP_VERSION)
+                app_version=FAKE_APP_VERSION, api_url=FAKE_API_URL)
 
     def test_auth_token(self):
         """Verifies custom auth token."""
@@ -316,6 +316,10 @@ class RestClientInitArgs(unittest.TestCase):
     def test_app_version(self):
         """Verifies custom application version."""
         self.assertEqual(self.client.app_version, FAKE_APP_VERSION)
+
+    def test_api_url(self):
+        """Verifies custom API URL."""
+        self.assertEqual(self.client.api_url, FAKE_API_URL)
 
 
 class ApiAuthNewCommon(unittest.TestCase, ApiCallCommonMixin):

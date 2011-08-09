@@ -107,7 +107,9 @@ class RestClient(object):
         api_url: A string containing the URL of the API's entry point.
 
     """
-    def __init__(self, auth_token=None, app_id=None, app_version=None):
+    def __init__(
+            self, auth_token=None, app_id=None, app_version=None,
+            api_url=None):
         """Initialize a REST client.
 
         Args:
@@ -121,15 +123,18 @@ class RestClient(object):
             app_version: A string containing your application's version.
                     Defaults to DEFAULT_APP_VERSION but should be set
                     along with app_id to identify your app to the API.
+            api_url: A string containing the URL for the API's entry
+                    point. Defaults to DEFAULT_API_URL.
 
         """
         self.auth_token = auth_token
         self.app_id = app_id or DEFAULT_APP_ID
         self.app_version = app_version or DEFAULT_APP_VERSION
-        self.api_url = DEFAULT_API_URL
+        self.api_url = api_url or DEFAULT_API_URL
         log.info(
-                "Initialized REST client for application %s version %s",
-                self.app_id, self.app_version)
+                ("Initialized REST client for application %s version %s "
+                 "using API URL %s"),
+                self.app_id, self.app_version, self.api_url)
 
     def api_auth_new(self, user, password_md5):
         """Authenticate the user with the API.
