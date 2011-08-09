@@ -20,6 +20,7 @@ import rest_client
 from rest_client import *
 __pychecker__ = ''
 
+FAKE_API_ERROR = 999
 FAKE_API_URL = 'https://fake.url/api/'
 FAKE_APP_ID = 'my-app'
 FAKE_APP_VERSION = '1.2.3'
@@ -32,8 +33,13 @@ FAKE_USER = 'username'
 FAKE_UUID4 = '1aae458a-efb1-4534-b7a2-31e3c77a8e31'
 INVALID_JSON = '{"invalid": "json"'
 NOT_JSON = 'not even close to json'
-VALID_JSON = '{"valid": "json"}'
-VALID_JSON_AS_NATIVE = {'valid': 'json'}
+VALID_REQUEST = '"request": {"a": "b"}'
+VALID_RESULTS = '"results": [{"c": "d"}]'
+VALID_JSON = '{{{0}, {1}}}'.format(VALID_REQUEST, VALID_RESULTS)
+VALID_JSON_AS_NATIVE_REQUEST = {'a': 'b'}
+VALID_JSON_AS_NATIVE_RESULTS = [{'c': 'd'}]
+RESPONSE_MISSING_REQUEST = '{"results": [{"c": "d"}]}'
+RESPONSE_MISSING_RESULTS = '{"request": {"a": "b"}}'
 
 # In general, all API calls have these parameters in the request URL's
 # query string.
@@ -106,10 +112,61 @@ class ApiCallCommonMixin(object):
         """Verifies a valid JSON response from the API is decoded properly."""
         assert callable(self.callable_obj)
         urlopen_mock.return_value = StringIO.StringIO(VALID_JSON)
-        result = self.callable_obj(
+        request, results = self.callable_obj(
                 *self.callable_obj_args,
                 **self.callable_obj_kwargs)
-        self.assertEqual(result, VALID_JSON_AS_NATIVE)
+        self.assertEqual(request, VALID_JSON_AS_NATIVE_REQUEST)
+        self.assertEqual(results, VALID_JSON_AS_NATIVE_RESULTS)
+
+    @patch.object(urllib2, 'urlopen')
+    def test_missing_request_in_response(self, urlopen_mock):
+        """Verifies CommunicationError when response is missing 'request'."""
+        assert callable(self.callable_obj)
+        urlopen_mock.return_value = StringIO.StringIO(RESPONSE_MISSING_REQUEST)
+        with self.assertRaises(CommunicationError):
+            self.callable_obj(
+                    *self.callable_obj_args,
+                    **self.callable_obj_kwargs)
+
+    @patch.object(urllib2, 'urlopen')
+    def test_missing_results_in_response(self, urlopen_mock):
+        """Verifies CommunicationError when response is missing 'results'."""
+        assert callable(self.callable_obj)
+        urlopen_mock.return_value = StringIO.StringIO(RESPONSE_MISSING_RESULTS)
+        with self.assertRaises(CommunicationError):
+            self.callable_obj(
+                    *self.callable_obj_args,
+                    **self.callable_obj_kwargs)
+
+    @patch.object(urllib2, 'urlopen')
+    def test_generic_api_error(self, urlopen_mock):
+        """Verifies ApiError when an API error is returned."""
+        assert callable(self.callable_obj)
+        urlopen_mock.return_value = StringIO.StringIO(
+                _api_error_response(FAKE_API_ERROR))
+        with self.assertRaisesRegexp(ApiError, str(FAKE_API_ERROR)):
+            self.callable_obj(
+                    *self.callable_obj_args,
+                    **self.callable_obj_kwargs)
+
+
+class ApiCallAuthenticatedMixin(object):
+    """Tests common to API calls requiring an authenticated user."""
+
+    callable_obj = None
+    callable_obj_args = ()
+    callable_obj_kwargs = {}
+
+    @patch.object(urllib2, 'urlopen')
+    def test_not_authenticated(self, urlopen_mock):
+        """Verifies NotAuthenticatedError when user is not authenticated."""
+        assert callable(self.callable_obj)
+        urlopen_mock.return_value = StringIO.StringIO(
+                _api_error_response(rest_client.API_ERROR_NOT_AUTHENTICATED))
+        with self.assertRaises(NotAuthenticatedError):
+            self.callable_obj(
+                    *self.callable_obj_args,
+                    **self.callable_obj_kwargs)
 
 
 class ApiCallUrlMixin(object):
@@ -306,11 +363,34 @@ class ApiAuthNewPostQueryString(
 
 class ApiAuthNew(unittest.TestCase):
     """Tests 'auth.new' functionality specific to this API call."""
-    pass
+
+    callable_obj = None
+    callable_obj_args = ()
+    callable_obj_kwargs = {}
+
+    def setUp(self):
+        self.callable_obj = do_api_auth_new
+
+    @patch.object(urllib2, 'urlopen')
+    def test_invalid_login_credentials(self, urlopen_mock):
+        assert callable(self.callable_obj)
+        urlopen_mock.return_value = StringIO.StringIO(
+                _api_error_response(rest_client.API_ERROR_INVALID_LOGIN))
+        with self.assertRaises(InvalidLoginError):
+            self.callable_obj(
+                    *self.callable_obj_args,
+                    **self.callable_obj_kwargs)
 
 
 class ApiEverythingCommon(unittest.TestCase, ApiCallCommonMixin):
     """Tests 'everything' functionality common API calls."""
+
+    def setUp(self):
+        self.callable_obj = do_api_everything
+
+
+class ApiEverythingAuthenticated(unittest.TestCase, ApiCallAuthenticatedMixin):
+    """Tests 'everything' functionality common to API calls requiring auth."""
 
     def setUp(self):
         self.callable_obj = do_api_everything
@@ -452,6 +532,12 @@ def outgoing_url_from_callable(callable_obj, *args, **kwargs):
 
     """
     return _outgoing_url_from_callable(callable_obj, *args, **kwargs)
+
+
+def _api_error_response(error_code):
+    response = '{{{0}, "results": [{{"error": {{"code": {1}}}}}]}}'.format(
+            VALID_REQUEST, error_code)
+    return response
 
 
 if __name__ == "__main__":

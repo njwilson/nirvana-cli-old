@@ -13,12 +13,11 @@ announced, yaddy yaddy yadda.
 Example:
     # Authenticate
     client = RestClient(app_id='my-app', app_version='1.0')
-    raw_auth = client.api_auth_new(user, md5_password)
-    auth_token = # ... TODO: get token out of raw_auth
-    client.auth_token = auth_token
+    request, results = client.api_auth_new(user, md5_password)
+    client.auth_token = results[0]['auth']['token']
 
     # Retrieve all of the user's data
-    raw_everything = client.api_everything()
+    everything = client.api_everything()[1]
 
 """
 
@@ -30,8 +29,11 @@ import urllib
 import urllib2
 import uuid
 
-__all__ = ['Error', 'CommunicationError', 'HTTPError', 'RestClient']
+__all__ = ['Error', 'CommunicationError', 'HTTPError', 'ApiError',
+           'NotAuthenticatedError', 'InvalidLoginError', 'RestClient']
 
+API_ERROR_NOT_AUTHENTICATED = 2
+API_ERROR_INVALID_LOGIN = 98
 DEFAULT_API_URL = 'https://api.nirvanahq.com/'
 DEFAULT_APP_ID = 'nirvana-python'
 DEFAULT_APP_VERSION = '0'   # TODO: Use the same version as setup.py?
@@ -45,7 +47,15 @@ class Error(Exception):
 
 
 class CommunicationError(Error):
-    """Exception raised for API communication errors."""
+    """Exception raised for API communication errors.
+
+    This exception is only used for errors related to connecting
+    properly with the API. This includes network errors, HTTP 404 not
+    found errors, etc. It does NOT include API errors contained in a valid
+    response from the API, such as an error caused by the user not being
+    authenticated.
+
+    """
     pass
 
 
@@ -65,13 +75,30 @@ class HTTPError(CommunicationError):
     pass
 
 
+class ApiError(Error):
+    """Exception raised for API errors."""
+    pass
+
+
+class NotAuthenticatedError(ApiError):
+    """Exception raised when the user is not authenticated with the API."""
+    pass
+
+
+class InvalidLoginError(ApiError):
+    """Exception raised when the user's login credentials are rejected."""
+    pass
+
+
 class RestClient(object):
     """Provides lower-level access to the REST API.
 
     Each api_*() method is a small wrapper around an operation supported
     by the API with a similar name. Raw JSON responses are converted to
-    native Python data structures (e.g., dictionaries and lists) and
-    returned. Little, if any, additional processing is done.
+    native Python data structures (e.g., dictionaries and lists), the
+    response is checked for errors, and the 'request' and 'results' fields
+    are extracted from the response and returned as a (request, results)
+    tuple.
 
     Attributes:
         auth_token: The user's authentication token string.
@@ -127,6 +154,8 @@ class RestClient(object):
                     HTTPError for details.
             CommunicationError: Failed to communicate with the server or
                     get a valid JSON response.
+            InvalidLoginError: Login credentials rejected.
+            ApiError: Error generated from the API.
 
         """
         log.info("Authenticating user %s", user)
@@ -156,6 +185,8 @@ class RestClient(object):
                     HTTPError for details.
             CommunicationError: Failed to communicate with the server or
                     get a valid JSON response.
+            NotAuthenticatedError: User is not authenticated.
+            ApiError: Error generated from the API.
 
         """
         since = since or 0
@@ -238,5 +269,27 @@ def _api_request(url, extra_headers=None, data=None):
         log.info("Failed to parse JSON from response: %s", json_data)
         raise CommunicationError(exc), None, sys.exc_info()[2]
 
-    log.debug("Converted response from JSON: %s", response)
-    return response
+    if 'request' not in response or 'results' not in response:
+        error = "Failed to find 'request' and 'results' in API response: {0}"
+        error = error.format(response)
+        log.info(error)
+        raise CommunicationError(error)
+
+    request = response['request']
+    log.debug("Received request: %s", request)
+    results = response['results']
+    log.debug("Received results: %s", results)
+
+    error = results[0].get('error', None)
+    if error:
+        log.info("API Error: %s", error)
+        code = error['code']
+        if code == API_ERROR_NOT_AUTHENTICATED:
+            raise NotAuthenticatedError(error)
+        elif code == API_ERROR_INVALID_LOGIN:
+            raise InvalidLoginError(error)
+        else:
+            # TODO: check for other specific error codes
+            raise ApiError(error)
+
+    return request, results
