@@ -16,7 +16,9 @@ import sys
 
 import rest_client
 
-__all__ = ['Error', 'AuthenticationError', 'ApiCommunicationError', 'Nirvana']
+__all__ = [
+        'Error', 'AuthenticationError', 'ApiCommunicationError', 'Nirvana',
+        'Item']
 
 # Silence invalid "Redefining attribute" from @property decorator
 __pychecker__ = 'no-reuseattr'
@@ -35,6 +37,134 @@ class AuthenticationError(Error):
 
 class ApiCommunicationError(Error):
     """Exception raised for API communication errors."""
+
+
+class Item(object):
+    """Parent class for API items such as tasks and tags.
+
+    Represents any of the core items from the API such as tasks and tags.
+    An Item stores the raw data from the API and exposes it to the
+    application in a convenient way.
+
+    Raw item data from the API looks like this once it's converted from
+    JSON:
+
+        {'name': 'Task name', '_name': '123456789', ...}
+
+    Each field (this example only contains one field called 'name') has an
+    entry in the dictionary containing the value of the field, as well as
+    an entry with the name preceded by an underscore ('_name') that
+    represents the time the field was last modified. Item's update()
+    method takes raw data from the API in this format and updates its
+    internal representation of the item.
+
+    By default, the raw item data from the API is not exposed by the
+    Item's public interface. Subclasses should set self._config to a
+    dictionary that specifies which raw fields should be exposed as public
+    properties of the object.  Each key in the dictionary is the name of
+    the field and its value is a tuple with the following format:
+
+        (read_func,)
+
+    where:
+        - read_func is a callable object that accepts the raw field value
+          as an argument and returns the value in the format expected by
+          users of the Item. If read_func is None, the raw field value is
+          returned unmodified.
+
+    The following example shows a sample item with two fields: 'id' and
+    'name'. Both fields are represented internally by a string, but the
+    public 'id' property is configured to be presented to the application
+    as an int.
+
+        class SampleItem(Item):
+            def __init__(self):
+                super(SampleItem, self).__init__()
+                self._config = {'id': (int,), 'name': (None,)}
+
+        item = SampleItem()
+        assert item.id is None
+        assert item.name is None
+
+        item.update({'id': '999', '_id': '123456789',
+                     'name': 'My Item', '_name': '123456789',
+                     'private': 'value', '_private': '123456789'})
+        assert item.id == 999
+        assert item.name == 'My Item'
+
+        # Attempting to read item.private would raise an AttributeError
+        # because 'private' is not in item._config
+
+    """
+
+    _CONFIG_READ_FUNC_IDX = 0
+
+    def __init__(self):
+        self._config = {}
+        self._data = {}
+
+    def update(self, data):
+        """Update the Item from raw data.
+
+        Args:
+            data: A dictionary containing the raw item fields in the
+                    format used by the API. A field is ignored unless its
+                    timestamp is greater than or equal to the field
+                    already stored.
+
+        """
+        for name, value in data.items():
+            if name[0] != '_':
+                ts_field = '_' + name
+                if ts_field in data:
+                    self._update_field(name, value, timestamp=data[ts_field])
+                else:
+                    log.warning(
+                            "Ignoring update of field {0}={1} because "
+                            "timestamp field {2} is missing", name,
+                            value, ts_field)
+
+    def __getattr__(self, name):
+        """Get raw fields through public properties if present in _config."""
+        if '_config' in self.__dict__:
+            if name in self.__dict__['_config']:
+                config = self.__dict__['_config'][name]
+                value = self.__dict__['_data'].get(name, None)
+                if value is not None:
+                    read_convert = config[self._CONFIG_READ_FUNC_IDX]
+                    if callable(read_convert):
+                        value = read_convert(value)
+                return value
+        raise AttributeError("'{0}' object has no attribute '{1}'".format(
+                self.__class__.__name__, name))
+
+    def __setattr__(self, name, value):
+        """Set raw fields through public properties if present in _config.
+
+        Currently raises AttributeError for all properties since modifying
+        Items is not supported yet.
+
+        """
+        if '_config' in self.__dict__:
+            config = self.__dict__['_config'].get(name, None)
+            if config:
+                # TODO: implement once we support writing stuff
+                raise AttributeError("can't set attribute")
+        object.__setattr__(self, name, value)
+
+    def _update_field(self, name, value, timestamp=None):
+        update = True
+        ts_field = '_' + name
+        if timestamp:
+            if ts_field in self._data:
+                old_ts = int(self._data[ts_field])
+                new_ts = int(timestamp)
+                if int(new_ts) < int(old_ts):
+                    update = False
+        if update:
+            self._data[name] = value
+            if timestamp:
+                self._data[ts_field] = timestamp
 
 
 class Nirvana(object):
