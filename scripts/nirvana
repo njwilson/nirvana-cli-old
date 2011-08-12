@@ -9,14 +9,5 @@ if __name__ == '__main__':
     nirv = Nirvana(username=sys.argv[1], password_md5=sys.argv[2])
     nirv.authenticate()
 
-    print "Getting all data..."
-    # nirv doesn't expose the 'everything' method yet, so reach into the
-    # internals for now
-    everything = nirv._rest_client.api_everything()[1]
-
-    for result in everything:
-        if 'user' in result:
-            first = result['user']['firstname']
-            last = result['user']['lastname']
-            print "Got everything for {0} {1}!".format(first, last)
-            break
+    print "Authenticated {0} {1}! Auth token: {2}".format(
+            nirv.user.firstname, nirv.user.lastname, nirv.auth_token)
