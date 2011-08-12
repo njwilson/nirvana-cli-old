@@ -277,10 +277,16 @@ class Nirvana(object):
         self._rest_client = rest_client.RestClient(
                 auth_token=auth_token, app_id=app_id,
                 app_version=app_version, api_url=api_url)
+        self._user = None
         log.info(
                 ("Initialized Nirvana for application %s version %s, user %s, "
                  "using API URL %s"),
                 self.app_id, self.app_version, self.username, self.api_url)
+
+    @property
+    def user(self):
+        """The User object."""
+        return self._user
 
     @property
     def auth_token(self):
@@ -357,9 +363,14 @@ class Nirvana(object):
 
         try:
             self.auth_token = results[0]['auth']['token']
+            raw_user = results[0]['auth']['user']
         except (IndexError, KeyError, TypeError):
-            error = "Can't find auth token in results: {0}".format(results)
+            error = "Can't find token/user in results: {0}".format(results)
             log.info(error)
             raise ApiCommunicationError(error)
 
         log.info("Successfully authenticated, auth token %s", self.auth_token)
+
+        if not self._user:
+            self._user = User()
+        self._user.update(raw_user)

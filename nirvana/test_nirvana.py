@@ -108,6 +108,10 @@ class NirvanaDefaultInit(unittest.TestCase):
         """Verifies the default API URL."""
         self.assertEqual(self.nirv.api_url, rest_client.DEFAULT_API_URL)
 
+    def test_default_user(self):
+        """Verifies the user is None."""
+        self.assertIsNone(self.nirv.user)
+
 
 class NirvanaInitArgs(unittest.TestCase):
     """Test Nirvana constructor with custom arguments."""
@@ -237,7 +241,7 @@ class NirvanaAuthenticateErrors(unittest.TestCase):
     def _test_no_auth_in_results(self, results, api_auth_new_mock):
         api_auth_new_mock.return_value = (FAKE_AUTH_NEW_REQUEST, results)
         with self.assertRaisesRegexp(
-                ApiCommunicationError, "Can't find auth token"):
+                ApiCommunicationError, "Can't find token/user"):
             self.nirv.authenticate()
 
     def test_no_auth_in_results(self):
@@ -254,19 +258,43 @@ class NirvanaAuthenticateSuccess(unittest.TestCase):
     """Test behavior of successful Nirvana authenticate() call."""
 
     def setUp(self):
-        with patch.object(
-                rest_client.RestClient, 'api_auth_new') as api_auth_new_mock:
-            api_auth_new_mock.return_value = (
-                    FAKE_AUTH_NEW_REQUEST, FAKE_AUTH_NEW_RESULTS)
-            self.nirv = Nirvana()
-            self.nirv.username = FAKE_USER
-            self.nirv.password_md5 = FAKE_PASSWORD
-            self.assertEqual(self.nirv.auth_token, None)
-            self.nirv.authenticate()
+        self.nirv = Nirvana()
+        self.nirv.username = FAKE_USER
+        self.nirv.password_md5 = FAKE_PASSWORD
+        self.assertEqual(self.nirv.auth_token, None)
+        self.assertEqual(self.nirv.user, None)
 
-    def test_auth_token_stored(self):
+    @patch.object(rest_client.RestClient, 'api_auth_new')
+    def test_auth_token_stored(self, api_auth_new_mock):
         """Verifies auth token is stored in self.auth_token."""
+        api_auth_new_mock.return_value = (
+                FAKE_AUTH_NEW_REQUEST, FAKE_AUTH_NEW_RESULTS)
+        self.nirv.authenticate()
         self.assertEqual(self.nirv.auth_token, FAKE_AUTH_TOKEN)
+
+    @patch.object(User, 'update')
+    @patch.object(rest_client.RestClient, 'api_auth_new')
+    def test_user_created_and_updated(
+            self, api_auth_new_mock, user_update_mock):
+        """Verify user data is created/updated after authentication."""
+
+        # Verify nirv.user is created and update() is called on first auth
+        api_auth_new_mock.return_value = (
+                FAKE_AUTH_NEW_REQUEST, FAKE_AUTH_NEW_RESULTS)
+        self.nirv.authenticate()
+        self.assertIsNotNone(self.nirv.user)
+        self.assertEqual(type(self.nirv.user), User)
+        self.assertEqual(user_update_mock.call_count, 1)
+
+        # Verify nirv.user's update() is called on second auth
+        self.nirv.authenticate()
+        self.assertEqual(user_update_mock.call_count, 2)
+
+        # Verify both calls to nirv.user's update() were passed the
+        # correct data
+        raw_user_arg = ((FAKE_AUTH_NEW_RESULTS[0]['auth']['user'],), {})
+        expected_arg_list = [raw_user_arg, raw_user_arg]
+        self.assertEqual(user_update_mock.call_args_list, expected_arg_list)
 
 
 class ItemAttr(unittest.TestCase):
