@@ -2,6 +2,7 @@
 
 """Unit tests for nirvana.py."""
 
+import datetime
 import sys
 if sys.version_info >= (2, 7):
     import unittest
@@ -401,6 +402,46 @@ class ItemUpdate(unittest.TestCase):
         expected['c'] = 33
         expected['_c'] = '345'
         self._assert_update(dict(self.DATA), update, expected)
+
+
+class UserUpdate(unittest.TestCase):
+    def setUp(self):
+        self.user = User()
+
+    def test_valid_update(self):
+        data = FAKE_AUTH_NEW_RESULTS[0]['auth']['user']
+        self.user.update(data)
+        self.assertEqual(self.user._data, data)
+
+    def test_invalid_user_version(self):
+        data = FAKE_AUTH_NEW_RESULTS[0]['auth']['user'].copy()
+        data['version'] = '1'
+        with self.assertRaisesRegexp(Error, 'Unsupported user version'):
+            self.user.update(data)
+
+
+class UserProperties(unittest.TestCase):
+    def setUp(self):
+        self.user = User()
+        self.user.update(FAKE_AUTH_NEW_RESULTS[0]['auth']['user'])
+
+    def test_properties(self):
+        fake_user = FAKE_AUTH_NEW_RESULTS[0]['auth']['user']
+        expected_last_write = datetime.datetime.fromtimestamp(
+                int(fake_user['lastwritebyuseron']))
+        data = (
+                (self.user.emailaddress, fake_user['emailaddress']),
+                (self.user.firstname, fake_user['firstname']),
+                (self.user.gmtoffset, int(fake_user['gmtoffset'])),
+                (self.user.id, fake_user['id']),
+                (self.user.inmailaddress, fake_user['inmailaddress']),
+                (self.user.lastname, fake_user['lastname']),
+                (self.user.lastwritebyuseron, expected_last_write),
+                (self.user.password, fake_user['password']),
+                (self.user.username, fake_user['username']),
+                (self.user.version, fake_user['version']))
+        for actual, expected in data:
+            self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

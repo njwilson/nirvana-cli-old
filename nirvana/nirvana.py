@@ -2,6 +2,8 @@
 
 """High-level library for Nirvana's API.
 
+This library only supports Nirvana version 2.
+
 Example:
     user, password_md5 = # [user's credentials]
     nirv = Nirvana(app_id='my-app', app_version='1.0')
@@ -9,8 +11,14 @@ Example:
     nirv.password_md5 = password_md5
     nirv.authenticate()
 
+TODO:
+    - Be more careful not to get local data into a weird state. Don't
+      halfway update items and then raise exceptions. Don't authenticate a
+      different user and overwrite some data from the original. Etc...
+
 """
 
+import datetime
 import logging
 import sys
 
@@ -18,12 +26,17 @@ import rest_client
 
 __all__ = [
         'Error', 'AuthenticationError', 'ApiCommunicationError', 'Nirvana',
-        'Item']
+        'Item', 'User']
 
 # Silence invalid "Redefining attribute" from @property decorator
 __pychecker__ = 'no-reuseattr'
 
 log = logging.getLogger(__name__)
+
+
+def _to_datetime(str_time):
+    # TODO: Should the user's timezone be taken into account?
+    return datetime.datetime.fromtimestamp(int(str_time))
 
 
 class Error(Exception):
@@ -165,6 +178,61 @@ class Item(object):
             self._data[name] = value
             if timestamp:
                 self._data[ts_field] = timestamp
+
+
+class User(Item):
+    """Representation of the API's 'user' item.
+
+    Attributes:
+        emailaddress: A string containing the user's email address.
+        firstname: A string containing the user's first name.
+        gmtoffset: An integer containing the user's timezone offset.
+        id: A string containing the user's ID.
+        inmailaddress: A string containing the user's email address for
+                adding tasks ([inmailaddress]@nirvanahq.com).
+        lastname: A string containing the user's last name.
+        lastwritebyuseron: A DateTime object representing the time of the
+                last write by the user.
+        password: A string containing the MD5 hash of the user's password.
+        username: A string containing the user's username.
+        version: A string containing the Nirvana version of the user's
+                account.
+
+    """
+
+    CONFIG = {
+            'emailaddress': (None,),
+            'firstname': (None,),
+            'gmtoffset': (int,),
+            'id': (None,),
+            'inmailaddress': (None,),
+            'lastname': (None,),
+            'lastwritebyuseron': (_to_datetime,),
+            'password': (None,),
+            'username': (None,),
+            'version': (None,)}
+
+    def __init__(self):
+        """Initialize an empty User object."""
+        super(User, self).__init__()
+        self._config = self.CONFIG
+
+    def update(self, data):
+        """Update the User from raw data.
+
+        This overrides Item's update method to support fields that don't
+        have timestamps.
+
+        """
+        for name, value in data.items():
+            if name[0] != '_':
+                if name == 'version':
+                    if value != '2':
+                        raise Error(
+                                "Unsupported user version {0}".format(value))
+                ts_field = '_' + name
+                timestamp = data.get(ts_field, None)
+                self._update_field(name, value, timestamp=timestamp)
 
 
 class Nirvana(object):
